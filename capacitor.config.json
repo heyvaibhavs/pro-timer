@@ -1,0 +1,5 @@
+{
+  "appId": "com.example.stopwatch",
+  "appName": "StopwatchApp",
+  "webDir": "dist"
+}
