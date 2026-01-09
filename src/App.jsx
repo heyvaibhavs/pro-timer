@@ -5,7 +5,14 @@ import { Play, Pause, Square, Clock, Bell, AlertCircle, RefreshCcw, Coffee, Uten
 
 const formatTimeOfDay = (timestamp) => {
   if (!timestamp) return '--:--:--';
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  // Forces 12-hour format (AM/PM) and Indian Standard Time (IST)
+  return new Date(timestamp).toLocaleTimeString('en-IN', { 
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit',
+    hour12: true
+  });
 };
 
 const formatDuration = (ms) => {
@@ -310,7 +317,7 @@ export default function StopwatchApp() {
       <div className="bg-slate-900 text-white p-4 pt- safe-top shrink-0 z-10 shadow-lg flex items-center justify-between">
          <div>
            <h1 className="text-lg font-black tracking-wider flex items-center gap-2">
-            <Clock className="text-blue-400" size={20} /> KITCHEN OPS
+            <Clock className="text-blue-400" size={20} /> MOMSMADE KITCHEN
            </h1>
            <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase">Production Timers</p>
          </div>
