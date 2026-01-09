@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Clock, Bell, AlertCircle, History, RefreshCcw } from 'lucide-react';
+import { Play, Pause, Square, Clock, Bell, AlertCircle, RefreshCcw, Coffee, Utensils, History } from 'lucide-react';
 
-// Utility to format timestamps to readable time string (12:30:45 PM)
+// --- UTILITIES ---
+
 const formatTimeOfDay = (timestamp) => {
   if (!timestamp) return '--:--:--';
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
-// Utility to format duration for the MAIN DISPLAY (MM:SS.ms)
 const formatDuration = (ms) => {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -16,55 +16,41 @@ const formatDuration = (ms) => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
 };
 
-// NEW: Utility for CLEAR, SIMPLE summary (e.g., "1m 5s")
 const formatDurationSimple = (ms) => {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds} sec`;
 };
 
-export default function StopwatchApp() {
+// --- SINGLE TIMER COMPONENT ---
+
+const SingleTimer = ({ id, label, Icon, audioCtxRef }) => {
   const [isRunning, setIsRunning] = useState(false);
-  const [startTime, setStartTime] = useState(null);
+  // Time state
+  const [startTime, setStartTime] = useState(null); // When current session started
+  const [accumulatedTime, setAccumulatedTime] = useState(0); // Time from previous sessions
+  const [displayTime, setDisplayTime] = useState(0); // Total duration to show
+  
+  // Stats state
+  const [sessionStartTime, setSessionStartTime] = useState(null); // Very first start
   const [stopTime, setStopTime] = useState(null);
-  const [currentTime, setCurrentTime] = useState(null);
-  const [alarmDuration, setAlarmDuration] = useState(15); // Default 15 minutes
+
+  // Alarm state
+  const [alarmDuration, setAlarmDuration] = useState(15);
   const [alarmTriggeredTime, setAlarmTriggeredTime] = useState(null);
   const [isAlarmRinging, setIsAlarmRinging] = useState(false);
 
   const timerRef = useRef(null);
   const alarmIntervalRef = useRef(null);
-  const audioCtxRef = useRef(null); // Keep one audio context alive
 
-  // Initialize AudioContext once on mount
-  useEffect(() => {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) {
-      audioCtxRef.current = new AudioContext();
-    }
-    return () => {
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-        audioCtxRef.current.close();
-      }
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (alarmIntervalRef.current) clearInterval(alarmIntervalRef.current);
-    };
-  }, []);
-
-  // Optimized Sound Player
+  // Sound Player
   const playAlarmSound = () => {
     try {
       if (!audioCtxRef.current) return;
       const ctx = audioCtxRef.current;
-      
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
+      if (ctx.state === 'suspended') ctx.resume();
 
       const t = ctx.currentTime;
       const osc1 = ctx.createOscillator();
@@ -73,7 +59,7 @@ export default function StopwatchApp() {
 
       osc1.type = 'square';
       osc2.type = 'square';
-
+      // Different pitch for Timer A vs Timer B? Let's keep them same for "Alarm" urgency
       osc1.frequency.setValueAtTime(800, t);
       osc2.frequency.setValueAtTime(840, t);
 
@@ -95,37 +81,10 @@ export default function StopwatchApp() {
     }
   };
 
-  // Main Timer Loop
-  useEffect(() => {
-    if (isRunning) {
-      timerRef.current = setInterval(() => {
-        const now = Date.now();
-        setCurrentTime(now);
-
-        // Check Alarm
-        if (startTime && !alarmTriggeredTime) {
-          const elapsed = now - startTime;
-          // Ensure we handle empty string case safely by defaulting to 0
-          const durationVal = Number(alarmDuration) || 0;
-          const alarmMs = durationVal * 60 * 1000;
-          
-          if (durationVal > 0 && elapsed >= alarmMs) {
-            triggerAlarm(now);
-          }
-        }
-      }, 50); 
-    } else {
-      clearInterval(timerRef.current);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [isRunning, startTime, alarmDuration, alarmTriggeredTime]);
-
   const triggerAlarm = (timestamp) => {
     setAlarmTriggeredTime(timestamp);
     setIsAlarmRinging(true);
-    
     playAlarmSound();
-    
     if (alarmIntervalRef.current) clearInterval(alarmIntervalRef.current);
     alarmIntervalRef.current = setInterval(playAlarmSound, 1000);
   };
@@ -138,23 +97,48 @@ export default function StopwatchApp() {
     setIsAlarmRinging(false);
   };
 
+  // Timer Logic
+  useEffect(() => {
+    if (isRunning) {
+      timerRef.current = setInterval(() => {
+        const now = Date.now();
+        const currentSessionDuration = now - startTime;
+        const totalDuration = accumulatedTime + currentSessionDuration;
+        
+        setDisplayTime(totalDuration);
+
+        // Check Alarm
+        if (!alarmTriggeredTime) {
+          const durationVal = Number(alarmDuration) || 0;
+          const alarmMs = durationVal * 60 * 1000;
+          if (durationVal > 0 && totalDuration >= alarmMs) {
+            triggerAlarm(now);
+          }
+        }
+      }, 50);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isRunning, startTime, accumulatedTime, alarmDuration, alarmTriggeredTime]);
+
+  // Handlers
   const handleStart = () => {
     const now = Date.now();
-    
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
+    if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
 
-    stopAlarm();
+    if (!sessionStartTime) setSessionStartTime(now); // Set first start time only once
+    
     setStartTime(now);
-    setCurrentTime(now);
-    setStopTime(null);
-    setAlarmTriggeredTime(null);
     setIsRunning(true);
+    setStopTime(null); // Clear stop time when resuming
   };
 
   const handleStop = () => {
-    setStopTime(Date.now());
+    const now = Date.now();
+    const currentSessionDuration = now - startTime;
+    setAccumulatedTime(prev => prev + currentSessionDuration);
+    setStopTime(now);
     setIsRunning(false);
     stopAlarm();
   };
@@ -162,178 +146,202 @@ export default function StopwatchApp() {
   const handleReset = () => {
     setIsRunning(false);
     setStartTime(null);
+    setAccumulatedTime(0);
+    setDisplayTime(0);
+    setSessionStartTime(null);
     setStopTime(null);
-    setCurrentTime(null);
     setAlarmTriggeredTime(null);
     stopAlarm();
   };
 
-  // New handler for input to allow clearing it completely
   const handleInputChange = (e) => {
     const val = e.target.value;
-    if (val === '') {
-      setAlarmDuration(''); // Allow empty string to clear the box
-    } else {
-      // Only set if it's a valid number
-      setAlarmDuration(val);
-    }
+    setAlarmDuration(val === '' ? '' : val);
   };
 
-  const currentDuration = startTime && currentTime ? currentTime - startTime : 0;
-  const finalDuration = startTime && stopTime ? stopTime - startTime : 0;
-  const displayDuration = isRunning ? currentDuration : finalDuration;
-  
   const durationVal = Number(alarmDuration) || 0;
-  const progress = durationVal > 0 ? Math.min((displayDuration / (durationVal * 60 * 1000)) * 100, 100) : 0;
+  const progress = durationVal > 0 ? Math.min((displayTime / (durationVal * 60 * 1000)) * 100, 100) : 0;
+  const hasStarted = sessionStartTime !== null;
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 flex flex-col items-center justify-center p-4 font-sans ${isAlarmRinging ? 'bg-red-50' : 'bg-slate-50'}`}>
+    <div className={`mb-4 flex flex-col rounded-3xl shadow-lg border border-slate-100 overflow-hidden transition-colors duration-500 ${isAlarmRinging ? 'bg-red-50 ring-4 ring-red-200' : 'bg-white'}`}>
       
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
-        
-        {/* Header */}
-        <div className={`p-6 text-center transition-colors duration-300 ${isAlarmRinging ? 'bg-red-500 text-white' : 'bg-slate-800 text-white'}`}>
-          <h1 className="text-2xl font-bold tracking-wider flex items-center justify-center gap-2">
-            {isAlarmRinging ? <Bell className="animate-bounce" /> : <Clock />}
-            PRO TIMER
-          </h1>
-          <p className="text-slate-300 text-sm mt-1">Simple Stopwatch with Alarm</p>
+      {/* Timer Header */}
+      <div className={`p-4 flex items-center justify-between ${isAlarmRinging ? 'bg-red-500 text-white' : 'bg-slate-800 text-white'}`}>
+        <div className="flex items-center gap-2 font-bold text-lg tracking-wide">
+          <Icon size={20} />
+          {label}
         </div>
+        {isAlarmRinging && <Bell className="animate-bounce" size={20} />}
+      </div>
 
-        {/* Alarm Settings */}
-        <div className="p-6 border-b border-slate-100">
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">
-            Set Alarm (Minutes)
-          </label>
-          <div className="flex gap-2 mb-3">
-            {[10, 15, 20].map((mins) => (
-              <button
-                key={mins}
-                onClick={() => !isRunning && setAlarmDuration(mins)}
-                disabled={isRunning}
-                className={`flex-1 py-3 px-3 rounded-lg text-sm font-bold transition-all ${
-                  Number(alarmDuration) === mins 
-                    ? 'bg-blue-600 text-white shadow-md' 
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50'
-                }`}
+      <div className="p-4 flex-1 flex flex-col">
+        
+        {/* Alarm Input */}
+        <div className="flex items-center gap-3 mb-4 bg-slate-50 p-2 rounded-xl border border-slate-100">
+          <span className="text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap">Alarm (Min):</span>
+          <div className="flex-1 flex gap-2 overflow-x-auto no-scrollbar">
+            {[15, 20, 30].map(m => (
+              <button 
+                key={m} 
+                onClick={() => setAlarmDuration(m)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${Number(alarmDuration) === m ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200'}`}
               >
-                {mins} Mins
+                {m}
               </button>
             ))}
           </div>
-          <div className="relative">
-            <input
+          <div className="relative w-16 shrink-0">
+             <input
               type="number"
               value={alarmDuration}
               onChange={handleInputChange}
-              disabled={isRunning}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-3 px-3 pl-10 pr-12 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-all"
+              className="w-full bg-white border border-slate-200 rounded-lg py-1 px-1 text-center font-bold text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               placeholder="0"
             />
-            <Bell className="w-4 h-4 text-slate-400 absolute left-3 top-4" />
-            <span className="absolute right-3 top-3.5 text-xs text-slate-400 font-bold bg-slate-100 px-2 py-1 rounded">MIN</span>
           </div>
         </div>
 
-        {/* Main Display */}
-        <div className="p-8 text-center relative">
-          <div className="w-full h-3 bg-slate-100 rounded-full mb-6 overflow-hidden">
-            <div 
-              className={`h-full transition-all duration-500 ${isAlarmRinging ? 'bg-red-500' : 'bg-blue-500'}`} 
-              style={{ width: `${progress}%` }}
-            ></div>
+        {/* Display */}
+        <div className="text-center mb-6 relative">
+          <div className="w-full h-3 bg-slate-100 rounded-full mb-4 overflow-hidden">
+             <div className={`h-full transition-all duration-300 ${isAlarmRinging ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${progress}%` }}></div>
           </div>
-
-          <div className={`text-5xl sm:text-6xl font-mono font-bold tabular-nums mb-2 ${isAlarmRinging ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
-            {formatDuration(displayDuration)}
+          <div className={`text-5xl font-mono font-bold tabular-nums tracking-tighter ${isAlarmRinging ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
+            {formatDuration(displayTime)}
           </div>
-          <div className="text-slate-400 font-bold text-sm uppercase tracking-widest">
-            {isRunning ? 'RUNNING...' : 'STOPPED'}
-          </div>
-
-          {/* Alarm Triggered Notification */}
+          
           {alarmTriggeredTime && (
-            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-in fade-in slide-in-from-bottom-2 border border-red-200">
-              <AlertCircle size={16} />
-              ALARM STARTED AT {formatTimeOfDay(alarmTriggeredTime)}
+            <div className="mt-2 text-xs font-bold text-red-600 flex items-center justify-center gap-1 animate-pulse">
+              <AlertCircle size={12} /> ALARM RANG
             </div>
           )}
         </div>
 
         {/* Controls */}
-        <div className="grid grid-cols-2 gap-4 px-6 pb-6">
+        <div className="grid grid-cols-2 gap-3 mb-6">
           {!isRunning ? (
             <button
               onClick={handleStart}
-              className="col-span-1 bg-green-500 hover:bg-green-600 active:scale-95 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-200 text-xl"
+              className={`py-4 rounded-xl font-bold flex items-center justify-center gap-2 text-white shadow-md active:scale-95 transition-all text-lg ${hasStarted ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
             >
-              <Play fill="currentColor" size={24} /> START
+              <Play fill="currentColor" size={20} /> {hasStarted ? 'RESUME' : 'START'}
             </button>
           ) : (
             <button
               onClick={handleStop}
-              className="col-span-1 bg-red-500 hover:bg-red-600 active:scale-95 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-red-200 text-xl"
+              className="bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all text-lg"
             >
-              <Square fill="currentColor" size={24} /> STOP
+              <Pause fill="currentColor" size={20} /> PAUSE
             </button>
           )}
 
           <button
             onClick={handleReset}
-            disabled={isRunning && !startTime}
-            className="col-span-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all text-lg"
+            disabled={!hasStarted}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-600 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 text-lg"
           >
             <RefreshCcw size={20} /> RESET
           </button>
         </div>
 
-        {/* Data Grid */}
-        <div className="bg-slate-50 border-t border-slate-100 p-6">
-          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-4 flex items-center gap-2">
-            <History size={16} /> Session Details
-          </h3>
+        {/* Stats Grid - Full Session Details */}
+        <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+          <h4 className="text-[10px] font-black text-slate-400 uppercase mb-3 flex items-center gap-1 tracking-wider">
+            <History size={10} /> Session Details
+          </h4>
           
-          <div className="grid grid-cols-2 gap-4">
-            {/* Column 1: Start Info */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <span className="block text-xs text-slate-400 font-bold mb-1 uppercase">Started At</span>
-              <span className="block text-xl font-bold text-slate-800">
-                {formatTimeOfDay(startTime)}
-              </span>
+          <div className="grid grid-cols-2 gap-2">
+            {/* Start */}
+            <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
+               <span className="block text-[9px] text-slate-400 font-bold uppercase mb-0.5">Started At</span>
+               <span className="font-mono text-sm font-bold text-slate-700">{formatTimeOfDay(sessionStartTime)}</span>
             </div>
 
-            {/* Column 2: Stop Info */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <span className="block text-xs text-slate-400 font-bold mb-1 uppercase">Stopped At</span>
-              <span className={`block text-xl font-bold ${stopTime ? 'text-slate-800' : 'text-slate-300'}`}>
-                {formatTimeOfDay(stopTime)}
-              </span>
+            {/* Stop */}
+            <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
+               <span className="block text-[9px] text-slate-400 font-bold uppercase mb-0.5">Stopped At</span>
+               <span className={`font-mono text-sm font-bold ${stopTime ? 'text-slate-700' : 'text-slate-300'}`}>
+                 {formatTimeOfDay(stopTime)}
+               </span>
+            </div>
+
+            {/* Alarm */}
+            <div className={`bg-white p-2 rounded-lg border shadow-sm ${alarmTriggeredTime ? 'border-red-200 bg-red-50' : 'border-slate-100'}`}>
+               <span className={`block text-[9px] font-bold uppercase mb-0.5 ${alarmTriggeredTime ? 'text-red-400' : 'text-slate-400'}`}>Alarm Rang</span>
+               <span className={`font-mono text-sm font-bold ${alarmTriggeredTime ? 'text-red-600' : 'text-slate-300'}`}>
+                 {formatTimeOfDay(alarmTriggeredTime)}
+               </span>
+            </div>
+
+            {/* Total */}
+            <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
+               <span className="block text-[9px] text-slate-400 font-bold uppercase mb-0.5">Total Time</span>
+               <span className="font-mono text-sm font-bold text-blue-600">{formatDurationSimple(displayTime)}</span>
             </div>
           </div>
-
-          {/* Summary Footer */}
-          {(stopTime || alarmTriggeredTime) && (
-            <div className="mt-4 grid grid-cols-2 gap-4">
-               {/* Alarm Ring Time */}
-               <div className="p-4 rounded-lg bg-red-50 border border-red-200">
-                <span className="block text-xs text-red-500 font-bold uppercase mb-1">Alarm Rang At</span>
-                <span className="block text-lg font-black text-red-700 leading-none">
-                  {formatTimeOfDay(alarmTriggeredTime)}
-                </span>
-              </div>
-
-              {/* Total Duration */}
-              <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-                <span className="block text-xs text-blue-500 font-bold uppercase mb-1">Total Time</span>
-                <span className="block text-lg font-black text-blue-700 leading-none">
-                  {formatDurationSimple(displayDuration)}
-                </span>
-              </div>
-            </div>
-          )}
         </div>
 
       </div>
+    </div>
+  );
+};
+
+// --- MAIN APP COMPONENT ---
+
+export default function StopwatchApp() {
+  const audioCtxRef = useRef(null);
+
+  useEffect(() => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) {
+      audioCtxRef.current = new AudioContext();
+    }
+    return () => {
+      if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close();
+    };
+  }, []);
+
+  return (
+    // FULL SCREEN WRAPPER - Android App Feel
+    <div className="h-screen w-full bg-slate-100 flex flex-col font-sans overflow-hidden">
+      
+      {/* Sticky Header */}
+      <div className="bg-slate-900 text-white p-4 pt- safe-top shrink-0 z-10 shadow-lg flex items-center justify-between">
+         <div>
+           <h1 className="text-lg font-black tracking-wider flex items-center gap-2">
+            <Clock className="text-blue-400" size={20} /> KITCHEN OPS
+           </h1>
+           <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase">Production Timers</p>
+         </div>
+         <div className="bg-slate-800 px-2 py-1 rounded text-[10px] font-bold text-slate-300 border border-slate-700">
+           v2.0
+         </div>
+      </div>
+
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto p-4 pb-20 no-scrollbar">
+        <SingleTimer 
+          id="timer1" 
+          label="STATION A" 
+          Icon={Utensils} 
+          audioCtxRef={audioCtxRef} 
+        />
+        
+        <SingleTimer 
+          id="timer2" 
+          label="STATION B" 
+          Icon={Coffee} 
+          audioCtxRef={audioCtxRef} 
+        />
+        
+        <div className="text-center p-4">
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+            Screen stays active while timing
+          </p>
+        </div>
+      </div>
+      
     </div>
   );
 }
