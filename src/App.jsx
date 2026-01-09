@@ -330,14 +330,14 @@ export default function StopwatchApp() {
       <div className="flex-1 overflow-y-auto p-4 pb-20 no-scrollbar">
         <SingleTimer 
           id="timer1" 
-          label="STATION A" 
+          label="KADHAI 1" 
           Icon={Utensils} 
           audioCtxRef={audioCtxRef} 
         />
         
         <SingleTimer 
           id="timer2" 
-          label="STATION B" 
+          label="KADHAI 2" 
           Icon={Coffee} 
           audioCtxRef={audioCtxRef} 
         />
