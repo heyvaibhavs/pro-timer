@@ -1,0 +1,16 @@
+{
+  "short_name": "KitchenOps",
+  "name": "Kitchen Production Timer",
+  "icons": [
+    {
+      "src": "vite.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#f1f5f9",
+  "orientation": "portrait"
+}
